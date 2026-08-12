@@ -1,4 +1,4 @@
-# pic18-secure-bootloader
+# PIC18 Secure Bootloader
 
 A secure bootloader for the PIC18F4550 that accepts firmware images over UART
 and verifies an ECDSA-P256 signature before committing them to flash.  SHA-256

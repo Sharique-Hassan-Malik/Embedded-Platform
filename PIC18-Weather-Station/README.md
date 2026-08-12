@@ -1,4 +1,4 @@
-# pic18-weather-station
+# PIC18 Weather Station
 
 A battery-powered weather station on the PIC18F26K22 microcontroller.  A
 BME280 sensor reads temperature, humidity and pressure over I2C.  A DS3231

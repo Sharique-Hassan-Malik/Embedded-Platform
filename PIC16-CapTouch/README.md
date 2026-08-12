@@ -1,4 +1,4 @@
-# pic16-captouch
+# PIC16 CapTouch
 
 A charge-time measurement (CTM) capacitive touch library for PIC16
 microcontrollers.  No dedicated touch hardware is required: sensing is done

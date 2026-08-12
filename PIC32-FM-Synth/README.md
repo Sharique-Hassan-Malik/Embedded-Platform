@@ -1,4 +1,4 @@
-# pic32-fm-synth
+# PIC32 FM Synth
 
 A standalone two-operator FM synthesizer voice for the PIC32MX270F256B
 microcontroller.  MIDI notes arrive on UART1 at 31 250 baud and audio exits

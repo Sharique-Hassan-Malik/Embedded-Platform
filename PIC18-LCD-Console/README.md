@@ -1,4 +1,4 @@
-# pic18-lcd-console
+# PIC18 LCD Console
 
 A portable Breakout clone running on a PIC18F4550 microcontroller driving a
 128×64 KS0108 monochrome LCD.  Everything from the display driver to the

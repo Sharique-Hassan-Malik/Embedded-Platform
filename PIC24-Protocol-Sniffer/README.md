@@ -1,4 +1,4 @@
-# pic24-protocol-sniffer
+# PIC24 Protocol Sniffer
 
 A passive, simultaneous UART/I2C/SPI protocol sniffer built on the
 PIC24FJ64GA002.  All three buses are captured concurrently without any
