@@ -1,0 +1,7 @@
+# AVR support in Rust requires nightly due to the avr-unknown-gnu-* target
+# not yet being tier-1 stable. Pin to a known-good nightly that works with
+# the avr-hal version declared in Cargo.toml.
+[toolchain]
+channel    = "nightly-2024-08-01"
+components = ["rust-src"]
+targets    = []        # AVR target is built from source via -Z build-std

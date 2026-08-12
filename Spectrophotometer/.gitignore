@@ -1,0 +1,15 @@
+build/
+*.elf
+*.hex
+*.bin
+*.map
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+calibration.json
+.DS_Store
+Thumbs.db
+*~
+*.swp

@@ -1,0 +1,25 @@
+# Build artifacts
+build/
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.d
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+# Python host tools
+__pycache__/
+*.pyc
+.venv/
+venv/
+# OS / editor
+.DS_Store
+Thumbs.db
+*~
+*.swp
+.vscode/
+.idea/
