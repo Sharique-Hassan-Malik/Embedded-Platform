@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "embedkit"
+version = "1.0.0"
+description = "Nineteen firmware projects, one build harness and one host-side link"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+# The harness is standard library only. A host tool that talks to a board needs
+# pyserial; reading a saved capture does not.
+dependencies = []
+
+[project.optional-dependencies]
+serial = ["pyserial>=3.5"]
+plot = ["matplotlib", "numpy"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+embed = "embedkit.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["embedkit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q --import-mode=importlib"
+markers = [
+    "slow: invokes a real compiler (minutes, not seconds)",
+]

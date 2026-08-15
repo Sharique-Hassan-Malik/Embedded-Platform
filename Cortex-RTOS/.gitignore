@@ -1,7 +1,0 @@
-build/
-tests/host/test_kernel
-*.o
-*.elf
-*.bin
-*.map
-*.d

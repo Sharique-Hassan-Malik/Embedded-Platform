@@ -1,9 +1,0 @@
-__pycache__/
-*.py[cod]
-.pytest_cache/
-firmware/build/
-*.uf2
-*.elf
-*.bin
-*.map
-*.dis

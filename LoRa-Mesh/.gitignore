@@ -1,5 +1,0 @@
-tests/test_mesh
-__pycache__/
-*.py[cod]
-.pytest_cache/
-*.csv

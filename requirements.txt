@@ -1,0 +1,6 @@
+# embedkit is standard library only. The compilers come from elsewhere:
+#   apt install gcc-arm-none-eabi
+#   Microchip XC8/XC16/XC32 from microchip.com, plus device packs
+#   arduino-cli, with `arduino-cli core install arduino:avr`
+pyserial>=3.5     # only for host tools that talk to a board
+pytest>=7
