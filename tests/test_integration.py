@@ -11,6 +11,8 @@ resolved to the wrong family, a CRC variant that disagrees with the firmware.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -184,6 +186,35 @@ class _FakeSerial:
         pass
 
 
+class TestBootloaderCrypto:
+    """The bootloader's signature verification, against published vectors.
+
+    Runs on the host, because the PIC build does not fit in RAM and so nothing
+    on the device has ever executed this code. That is exactly why it needed
+    testing: four defects were sitting in it, and each one made verification
+    silently wrong rather than loud.
+    """
+
+    def test_the_published_vectors_all_match(self, tmp_path):
+        if shutil.which("gcc") is None:
+            pytest.skip("gcc is not installed")
+
+        module = registry.module("bootloader")
+        binary = tmp_path / "crypto"
+        build = subprocess.run(
+            ["gcc", "-O2", "-o", str(binary),
+             str(module.path / "tests" / "test_crypto.c"),
+             str(module.path / "bootloader" / "p256.c"),
+             str(module.path / "bootloader" / "sha256.c")],
+            capture_output=True, text=True, timeout=300,
+        )
+        assert build.returncode == 0, build.stderr[-3000:]
+
+        run = subprocess.run([str(binary)], capture_output=True, text=True,
+                             timeout=300)
+        assert run.returncode == 0, run.stdout
+
+
 @slow
 class TestBuilds:
     """Compiling firmware for five families. Minutes, not seconds."""
@@ -192,13 +223,6 @@ class TestBuilds:
         "module", registry.modules(), ids=lambda m: m.name
     )
     def test_module_builds_or_says_why_not(self, module):
-        if module.name == "bootloader":
-            # A real defect, kept as a failing case rather than papered over:
-            # the 65-byte P-256 public key does not fit in any PIC18 bank once
-            # p256_verify's compiled-stack working set is placed. Fixing it
-            # means laying out crypto scratch space across p256.c, which is a
-            # measurement, not a guess. See docs/known-issues.md.
-            pytest.xfail("bootloader exceeds PIC18 RAM — docs/known-issues.md")
         result = toolchain.build_module(module, timeout=900)
         if result.skipped:
             pytest.skip(result.skipped)

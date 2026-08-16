@@ -45,8 +45,14 @@ static const fe B = {
 static const point_t G = {
     { 0x6B17D1F2UL, 0xE12C4247UL, 0xF8BCE6E5UL, 0x63A440F2UL,
       0x77037D81UL, 0x2DEB33A0UL, 0xF4A13945UL, 0xD898C296UL },
+    /* Gy = 4FE342E2 FE1A7F9B 8EE7EB4A 7C0F9E16 2BCE3357 6B315ECE CBB64068
+             37BF51F5.  The limbs below used to read ... 0x6B315ECECL,
+       0xBB640683UL, 0x7BF51F5UL: nine hex digits in one limb, so every digit
+       after it was shifted by one and the last three limbs were wrong. The
+       compiler said so — "conversion changes value from 28774362348" — and
+       nothing was listening, because this firmware has never linked. */
     { 0x4FE342E2UL, 0xFE1A7F9BUL, 0x8EE7EB4AUL, 0x7C0F9E16UL,
-      0x2BCE3357UL, 0x6B315ECECL, 0xBB640683UL, 0x7BF51F5UL  },
+      0x2BCE3357UL, 0x6B315ECEUL, 0xCBB64068UL, 0x37BF51F5UL },
     0
 };
 
@@ -180,68 +186,66 @@ static void fe_mul_wide(wide res, const fe a, const fe b)
  */
 static void reduce_p256(fe r, const wide t)
 {
-    fe s1, s2, s3, s4, s5, s6, s7, s8;
-    fe tmp;
-    uint32_t carry;
+    fe s;                       /* one scratch value, built and consumed nine times */
 
-    /* The limb indices below refer to the notation in FIPS 186-4 D.4
-     * where t = A[15]A[14]...A[0] with A[0] least significant.
-     * Our array has t[0] = most significant → A[15] in FIPS notation.
-     * Mapping: FIPS A[k] = t[15-k]. */
+    /* FIPS 186-4 D.2.3 works on sixteen 32-bit words A[0..15], A[0] least
+     * significant. `wide` is stored most-significant first, so A[k] = t[15-k].
+     *
+     * The previous version had that mapping right and then indexed A(16)
+     * through A(31), which is t[-1] through t[-16]: reads before the array.
+     * It reduced 1 to a 256-bit constant. Nothing caught it because this
+     * firmware has never linked, so no test ever ran the field arithmetic.
+     *
+     * It also held all nine terms at once. XC8 in free mode does not overlay
+     * locals, and this function is on every multiply's call path, so those
+     * 288 bytes were permanently resident on a part with 2 KB. One scratch
+     * value, folded into the accumulator as each term is formed, costs 32.
+     */
 #define A(k) t[15-(k)]
+#define TERM(w7, w6, w5, w4, w3, w2, w1, w0)                                 \
+    do {                                                                     \
+        s[0]=(w7); s[1]=(w6); s[2]=(w5); s[3]=(w4);                           \
+        s[4]=(w3); s[5]=(w2); s[6]=(w1); s[7]=(w0);                           \
+        fe_reduce_p(s);   /* an arbitrary 256-bit value may exceed P, and    \
+                             fe_addmod assumes both operands are below it */ \
+    } while (0)
 
-    /* s1 = (A15, A14, A13, A12, A11, A10, A9, A8)  — the low half already. */
-    s1[0]=A(15); s1[1]=A(14); s1[2]=A(13); s1[3]=A(12);
-    s1[4]=A(11); s1[5]=A(10); s1[6]=A(9);  s1[7]=A(8);
+    /* r = s1 + 2*s2 + 2*s3 + s4 + s5 - s6 - s7 - s8 - s9  (mod P), with each
+       tuple written most-significant word first. */
 
-    /* s2 = (A19, A18, A17, A16, 0, 0, 0, 0) */
-    s2[0]=A(19); s2[1]=A(18); s2[2]=A(17); s2[3]=A(16);
-    s2[4]=0;     s2[5]=0;     s2[6]=0;     s2[7]=0;
+    TERM(A(7), A(6), A(5), A(4), A(3), A(2), A(1), A(0));       /* s1 */
+    fe_copy(r, s);
 
-    /* s3 = (A23, A22, A21, A20, A19, A18, A17, A16) */
-    s3[0]=A(23); s3[1]=A(22); s3[2]=A(21); s3[3]=A(20);
-    s3[4]=A(19); s3[5]=A(18); s3[6]=A(17); s3[7]=A(16);
+    TERM(A(15), A(14), A(13), A(12), A(11), 0, 0, 0);           /* s2, twice */
+    fe_addmod(r, r, s); fe_addmod(r, r, s);
 
-    /* s4 = (A31, A30, A29, A28, A27, A24, A23, A22) */
-    s4[0]=A(31); s4[1]=A(30); s4[2]=A(29); s4[3]=A(28);
-    s4[4]=A(27); s4[5]=A(24); s4[6]=A(23); s4[7]=A(22);
+    TERM(0, A(15), A(14), A(13), A(12), 0, 0, 0);               /* s3, twice */
+    fe_addmod(r, r, s); fe_addmod(r, r, s);
 
-    /* s5 = (0, A31, A30, A29, A28, 0, A25, A24) */
-    s5[0]=0;     s5[1]=A(31); s5[2]=A(30); s5[3]=A(29);
-    s5[4]=A(28); s5[5]=0;     s5[6]=A(25); s5[7]=A(24);
+    TERM(A(15), A(14), 0, 0, 0, A(10), A(9), A(8));             /* s4 */
+    fe_addmod(r, r, s);
 
-    /* s6 = (0, 0, 0, A31, A27, A26, A25, A24) */
-    s6[0]=0;     s6[1]=0;     s6[2]=0;     s6[3]=A(31);
-    s6[4]=A(27); s6[5]=A(26); s6[6]=A(25); s6[7]=A(24);
+    TERM(A(8), A(13), A(15), A(14), A(13), A(11), A(10), A(9)); /* s5 */
+    fe_addmod(r, r, s);
 
-    /* s7 = (A31, A30, A29, A28, A27, A26, A25, A23) */
-    s7[0]=A(31); s7[1]=A(30); s7[2]=A(29); s7[3]=A(28);
-    s7[4]=A(27); s7[5]=A(26); s7[6]=A(25); s7[7]=A(23);
+    TERM(A(10), A(8), 0, 0, 0, A(13), A(12), A(11));            /* s6 */
+    fe_submod(r, r, s);
 
-    /* s8 = (A31, A26, A25, A24, A23, A22, A21, A20) */
-    s8[0]=A(31); s8[1]=A(26); s8[2]=A(25); s8[3]=A(24);
-    s8[4]=A(23); s8[5]=A(22); s8[6]=A(21); s8[7]=A(20);
+    TERM(A(11), A(9), 0, 0, A(15), A(14), A(13), A(12));        /* s7 */
+    fe_submod(r, r, s);
 
+    TERM(A(12), 0, A(10), A(9), A(8), A(15), A(14), A(13));     /* s8 */
+    fe_submod(r, r, s);
+
+    TERM(A(13), 0, A(11), A(10), A(9), 0, A(15), A(14));        /* s9 */
+    fe_submod(r, r, s);
+
+#undef TERM
 #undef A
 
-    /* r = s1 + 2s2 + 2s3 + s4 + s5 − s6 − s7 − s8  mod P */
-    fe_copy(r, s1);
-
-    fe_addmod(r, r, s2);   fe_addmod(r, r, s2);   /* +2s2 */
-    fe_addmod(r, r, s3);   fe_addmod(r, r, s3);   /* +2s3 */
-    fe_addmod(r, r, s4);
-    fe_addmod(r, r, s5);
-
-    fe_submod(r, r, s6);
-    fe_submod(r, r, s7);
-    fe_submod(r, r, s8);
-
-    /* A final conditional subtraction ensures r < P. */
-    while (fe_cmp(r, P) >= 0)
-        fe_sub256(r, r, P);
-
-    (void)tmp; (void)carry;
+    fe_reduce_p(r);
 }
+
 
 static void fe_mulmod(fe c, const fe a, const fe b)
 {
@@ -340,24 +344,37 @@ static void jpoint_double(jpoint_t *R, const jpoint_t *P_j)
     fe_copy(B, E);
     fe_addmod(B, B, E); fe_addmod(B, B, E);  /* 3*(X^2-Z^4) */
 
+    /* Z' = 2*Y*Z.
+     *
+     * Computed here, before anything is written to R, because point_mul
+     * doubles in place — `jpoint_double(&acc, &acc)` — so R and P_j are the
+     * same object. This used to come last, after R->Y had been written, and
+     * therefore squared the *new* Y into the new Z. Every doubling after the
+     * first was wrong, so 1*G was right and 2*G was not.
+     *
+     * Everything below reads only locals and P_j->X, which is not written
+     * until the end. fe_mulmod and fe_addmod are single-pass and safe when
+     * their output aliases an input.
+     */
+    fe_mulmod(R->Z, P_j->Y, P_j->Z);
+    fe_addmod(R->Z, R->Z, R->Z);
+
+    /* Y^4, from the Y^2 computed at the top — also before R->Y is written. */
+    fe_mulmod(C, tmp, tmp);                   /* Y^4 */
+    fe_addmod(C, C, C); fe_addmod(C, C, C);
+    fe_addmod(C, C, C);                       /* 8*Y^4 */
+
     /* F = B^2 - 2*A */
     fe_mulmod(F, B, B);
     fe_submod(F, F, A); fe_submod(F, F, A);
 
-    /* X' = F */
-    fe_copy(R->X, F);
-
     /* Y' = B*(A - F) - 8*Y^4 */
     fe_submod(E, A, F);
     fe_mulmod(R->Y, B, E);
-    fe_mulmod(C, tmp, tmp);                   /* Y^4 */
-    fe_addmod(C, C, C); fe_addmod(C, C, C);
-    fe_addmod(C, C, C);                       /* 8*Y^4 */
     fe_submod(R->Y, R->Y, C);
 
-    /* Z' = 2*Y*Z */
-    fe_mulmod(R->Z, P_j->Y, P_j->Z);
-    fe_addmod(R->Z, R->Z, R->Z);
+    /* X' = F, last: P_j->X is read above. */
+    fe_copy(R->X, F);
 
     (void)D;
 }
@@ -452,6 +469,57 @@ static void point_mul2(point_t *result,
     jpoint_to_affine(result, &Jacc);
 }
 
+/* ---- Arithmetic mod N ----------------------------------------------------- *
+ *
+ * The scalar field, and it is not the coordinate field. `fe_mulmod` and
+ * `fe_sqrmod` reduce mod P, and P != N, so they cannot be borrowed for scalar
+ * work: (x mod P) mod N is not x mod N. Both of the routines below used to do
+ * exactly that — one with a comment saying so — which made every signature
+ * verification wrong.
+ *
+ * Multiplication is double-and-add rather than a wide product with a mod-N
+ * reduction, because it needs only add and compare, which already exist and
+ * are already tested. 256 iterations to verify one signature, once, at boot.
+ */
+
+/* c = (a + b) mod N, for a, b < N.
+ *
+ * One conditional subtraction is enough: a + b < 2N < 2^257, so the sum
+ * exceeds N by less than N. The carry out of the 256-bit add is part of the
+ * comparison — a sum that wrapped is larger than N even when the low 256 bits
+ * are not.
+ */
+static void fe_addmod_n(fe c, const fe a, const fe b)
+{
+    uint32_t carry = fe_add256(c, a, b);
+    if (carry || fe_cmp(c, N) >= 0)
+        fe_sub256(c, c, N);
+}
+
+/* c = (a * b) mod N, for a, b < N. */
+static void fe_mulmod_n(fe c, const fe a, const fe b)
+{
+    fe acc;
+    int limb, bit;
+
+    fe_zero(acc);
+    for (limb = 0; limb < 8; limb++) {          /* limb 0 is most significant */
+        for (bit = 31; bit >= 0; bit--) {
+            fe_addmod_n(acc, acc, acc);         /* acc *= 2 */
+            if ((b[limb] >> bit) & 1u)
+                fe_addmod_n(acc, acc, a);
+        }
+    }
+    fe_copy(c, acc);
+}
+
+/* a mod N, for a < 2^256. One subtraction, since N > 2^255. */
+static void fe_reduce_n(fe a)
+{
+    if (fe_cmp(a, N) >= 0)
+        fe_sub256(a, a, N);
+}
+
 /* ---- Modular inverse mod N ----------------------------------------------- */
 
 static void fe_invmod_n(fe out, const fe a)
@@ -460,7 +528,7 @@ static void fe_invmod_n(fe out, const fe a)
     uint8_t exp_bytes[32];
     int     bit, byte_idx;
 
-    /* N - 2 */
+    /* N - 2, for Fermat: a^(N-2) == a^-1 mod N when N is prime. */
     fe n2;
     fe two = {0,0,0,0,0,0,0,2};
     fe_sub256(n2, N, two);
@@ -472,9 +540,9 @@ static void fe_invmod_n(fe out, const fe a)
 
     for (byte_idx = 0; byte_idx < 32; byte_idx++) {
         for (bit = 7; bit >= 0; bit--) {
-            fe_sqrmod(result, result);   /* uses P-reduction, but we need N-reduction */
+            fe_mulmod_n(result, result, result);
             if ((exp_bytes[byte_idx] >> bit) & 1)
-                fe_mulmod(result, result, base);
+                fe_mulmod_n(result, result, base);
         }
     }
     fe_copy(out, result);
@@ -504,26 +572,19 @@ int p256_verify(const uint8_t pubkey[65],
     if (fe_is_zero(r) || fe_cmp(r, N) >= 0) return -2;
     if (fe_is_zero(s) || fe_cmp(s, N) >= 0) return -3;
 
-    /* e = hash as integer. */
+    /* e = hash as an integer, reduced into the scalar field. */
     fe_from_bytes(e, hash);
+    fe_reduce_n(e);
 
     /* w = s^(-1) mod n. */
     fe_invmod_n(w, s);
 
-    /* u1 = e*w mod n,  u2 = r*w mod n.
-     * Note: fe_mulmod reduces mod P; for mod-N we rely on the fact that
-     * for P-256 N < P, so the schoolbook product fits and we reduce mod N
-     * via a comparison-and-subtract loop instead. */
-    {
-        wide tmp;
-        fe_mul_wide(tmp, e, w);
-        reduce_p256(u1, tmp);
-        while (fe_cmp(u1, N) >= 0) fe_sub256(u1, u1, N);
-
-        fe_mul_wide(tmp, r, w);
-        reduce_p256(u2, tmp);
-        while (fe_cmp(u2, N) >= 0) fe_sub256(u2, u2, N);
-    }
+    /* u1 = e*w mod n,  u2 = r*w mod n — in the scalar field, not the
+       coordinate field. This used to take the wide product, reduce it mod P
+       and then subtract N until it fit, which computes (x mod P) mod N. That
+       is not x mod N, and no signature verified. */
+    fe_mulmod_n(u1, e, w);
+    fe_mulmod_n(u2, r, w);
 
     /* R = u1*G + u2*Q */
     point_mul2(&R, u1, &G, u2, &Q);

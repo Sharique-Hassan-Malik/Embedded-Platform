@@ -24,6 +24,7 @@ answers against the machine they run on.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -220,16 +221,16 @@ def compile_pic(module: str, device: str, sources: list[str], family: str,
             return result
         command += [f"-mcpu={device}", f"-mdfp={dfp_argument(pack)}"]
     elif family == XC16:
-        # XC16 finds its own device support from -mcpu — but only if the
-        # device *library* is installed. Without it the compile succeeds and
-        # the link fails on every special-function register (`_IFS0bits`,
-        # `_SPI2BUF`), which reads like missing source rather than a missing
-        # library.
-        missing = _xc16_device_library_missing(tool.binary, device)
-        if missing:
-            result.skipped = missing
+        # The device linker script has to be named explicitly. XC16 accepts
+        # `-mcpu` and compiles happily without it, then fails the link on every
+        # special-function register — `_IFS0bits`, `_SPI2BUF` — which reads
+        # like missing source rather than a missing script. It is not a missing
+        # device library, which is what this used to say.
+        script = xc16_linker_script(tool.binary, device)
+        if script is None:
+            result.skipped = f"xc16 has no linker script for {device}"
             return result
-        command += [f"-mcpu={device}"]
+        command += [f"-mcpu={device}", f"-Wl,--script,{script}"]
     else:
         command += [f"-mprocessor={device}"]
 
@@ -328,9 +329,15 @@ def build_module(module, *, out_root: Path | None = None,
 
     if family == RUST:
         started = time.perf_counter()
+        # RUSTUP_TOOLCHAIN, if it is set in the environment, silently outranks
+        # the project's own rust-toolchain.toml. This module pins a nightly
+        # because AVR is not a tier-1 target; inheriting an ambient stable
+        # pin turns that into an E0554 four crates deep, which reads as
+        # broken code rather than as the wrong compiler.
+        env = {k: v for k, v in os.environ.items() if k != "RUSTUP_TOOLCHAIN"}
         completed = subprocess.run([str(tool.binary), "build", "--release"],
                                    cwd=module.path, capture_output=True,
-                                   text=True, timeout=timeout)
+                                   text=True, timeout=timeout, env=env)
         result = BuildResult(module=module.name, ok=completed.returncode == 0)
         result.elapsed = time.perf_counter() - started
         output = (completed.stdout or "") + (completed.stderr or "")
@@ -342,7 +349,9 @@ def build_module(module, *, out_root: Path | None = None,
         if not result.ok and "E0554" in output:
             result.skipped = ("needs a nightly Rust toolchain — avr-hal uses "
                               "#![feature(asm_experimental_arch)], which stable "
-                              "rejects with E0554")
+                              "rejects with E0554. rust-toolchain.toml pins one; "
+                              "install it with `rustup toolchain install "
+                              "nightly-2024-08-01 --component rust-src`")
         return result
 
     if family == MICROPYTHON:
@@ -353,10 +362,44 @@ def build_module(module, *, out_root: Path | None = None,
         )
 
     if family == PICO:
-        return BuildResult(
-            module=module.name,
-            skipped="needs the Pico SDK and a CMake configure step; not wired up here",
+        sdk = pico_sdk_path()
+        if sdk is None:
+            return BuildResult(
+                module=module.name,
+                skipped="needs the Pico SDK. It is a checkout, not a package: "
+                        "`git clone -b 2.1.1 --depth 1 --recurse-submodules "
+                        "https://github.com/raspberrypi/pico-sdk ~/.local/opt/"
+                        "pico-sdk`, or set $PICO_SDK_PATH",
+            )
+
+        source = module.path / "firmware"
+        build_dir = source / "build"
+        env = {**os.environ, "PICO_SDK_PATH": str(sdk)}
+        started = time.perf_counter()
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        configure = subprocess.run(
+            ["cmake", "..", "-DCMAKE_BUILD_TYPE=Release"],
+            cwd=build_dir, capture_output=True, text=True,
+            timeout=timeout, env=env,
         )
+        if configure.returncode != 0:
+            result = BuildResult(module=module.name)
+            result.elapsed = time.perf_counter() - started
+            result.output = ((configure.stdout or "") + (configure.stderr or "")
+                             ).strip().splitlines()[-8:]
+            return result
+
+        compile_step = subprocess.run(
+            ["make", f"-j{os.cpu_count() or 2}"],
+            cwd=build_dir, capture_output=True, text=True,
+            timeout=timeout, env=env,
+        )
+        result = BuildResult(module=module.name, ok=compile_step.returncode == 0)
+        result.elapsed = time.perf_counter() - started
+        result.output = ((compile_step.stdout or "") + (compile_step.stderr or "")
+                         ).strip().splitlines()[-8:]
+        return result
 
     # The Microchip families: everything under firmware/, compiled as one unit.
     sources = _c_sources(module)
@@ -366,24 +409,22 @@ def build_module(module, *, out_root: Path | None = None,
                        out=out_root / f"{module.name}.elf", timeout=timeout)
 
 
-def _xc16_device_library_missing(binary: Path, device: str) -> str:
-    """Whether this XC16 install actually has the device's library.
+def xc16_linker_script(binary: Path, device: str) -> Path | None:
+    """The `.gld` for a part, searched by content rather than by family name.
 
-    The compiler ships a linker script for far more parts than it ships
-    libraries for, so `-mcpu` is accepted and the link then fails on symbols
-    that look like they should have come from the source.
+    They live under `support/<FAMILY>/gld/p<DEVICE>.gld`, and the family is not
+    derivable from the part number — 24FJ64GA002 is under PIC24F, but plenty of
+    parts are not where the digits suggest. Globbing the families is shorter
+    than a table that will be wrong.
     """
-    root = binary.parent.parent
-    library = root / "lib" / f"libp{device.upper()}-elf.a"
-    alternative = root / "lib" / f"libp{device.lower()}-elf.a"
-    if library.exists() or alternative.exists():
-        return ""
-    script = root / "support" / "PIC24F" / "gld" / f"p{device.upper()}.gld"
-    if script.exists():
-        return (f"xc16 has the linker script for {device} but not its device "
-                f"library ({library.name}) — an incomplete installation, so "
-                f"every special-function register is undefined at link")
-    return f"xc16 has no device support for {device}"
+    support = binary.parent.parent / "support"
+    if not support.is_dir():
+        return None
+    for name in (device.upper(), device.lower()):
+        matches = sorted(support.glob(f"*/gld/p{name}.gld"))
+        if matches:
+            return matches[0]
+    return None
 
 
 # Headers that belong to a third-party library rather than to the sketch.
@@ -406,6 +447,30 @@ def _missing_arduino_library(output: str) -> str:
         if header.startswith(prefix):
             return library
     return ""
+
+
+#: A checkout, not a package, so there is no `which` for it.
+PICO_SDK_ROOTS = (
+    Path.home() / ".local/opt/pico-sdk",
+    Path.home() / "opt/pico-sdk",
+    Path.home() / "pico-sdk",
+    Path("/opt/pico-sdk"),
+)
+
+
+def pico_sdk_path() -> Path | None:
+    """$PICO_SDK_PATH, then the usual clone locations.
+
+    Identified by `pico_sdk_init.cmake`: a directory called pico-sdk that does
+    not contain it is a half-finished clone, and letting CMake discover that
+    produces a wall of unrelated errors.
+    """
+    from_env = os.environ.get("PICO_SDK_PATH")
+    candidates = ([Path(from_env)] if from_env else []) + list(PICO_SDK_ROOTS)
+    for candidate in candidates:
+        if (candidate / "pico_sdk_init.cmake").is_file():
+            return candidate
+    return None
 
 
 def _c_sources(module) -> list[str]:

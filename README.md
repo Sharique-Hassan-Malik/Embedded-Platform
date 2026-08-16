@@ -26,9 +26,10 @@ everything *around* the firmware, and that is what was duplicated nineteen times
 **Building it.** Every project had its own idea of where the compiler was. Five
 different toolchains, each with its own way of being half-installed. The harness
 knows the difference between "not installed", "installed but its backend is
-missing", and "installed but missing the device library for your part" — three
-problems that send you to three different places, and that all look like a build
-failure otherwise. It also knows that XC8 wants a device pack's `xc8`
+missing", and "installed but its linker script has to be named explicitly" —
+problems that send you to three different places and that all look like a build
+failure otherwise. Getting that distinction *wrong* is just as costly: `sniffer`
+was skipped for a year with a confident, specific and false reason. It also knows that XC8 wants a device pack's `xc8`
 subdirectory and not the pack root, because pointing at the root reports *"no
 device-support files found"*, which reads as a missing pack rather than a path
 one level too high.
@@ -54,7 +55,7 @@ including three that meant a project had never built at all.
 | [`rtos`](modules/rtos) | STM32F401RE | A pre-emptive kernel: context switching in assembly, priority scheduling, mutexes with priority inheritance, a heap. |
 | [`rtos-viz`](modules/rtos-viz) | host | Traces the kernel's scheduling decisions off the wire and draws them — the only way to *see* a priority inversion. |
 | [`foc-motor`](modules/foc-motor) | STM32F401RE | Field-oriented control: Clarke and Park transforms, dual PI current loops, space-vector modulation, at the switching frequency. |
-| [`bootloader`](modules/bootloader) | PIC18F4550 | Signed firmware updates over UART with a rollback slot — the part that has to be right because it cannot be updated. |
+| [`bootloader`](modules/bootloader) | PIC18F4550 | Signed firmware updates over UART with a rollback slot — the part that has to be right because it cannot be updated. ECDSA-P256 and SHA-256 checked against FIPS 180-4 and RFC 6979 on the host. |
 | [`weather`](modules/weather) | PIC18F26K22 | BME280 and DS3231 over I2C, an e-paper display, SD logging. |
 | [`captouch`](modules/captouch) | PIC16F1829 | Charge-time measurement on bare pads, with gesture recognition and drift compensation. |
 | [`lcd-console`](modules/lcd-console) | PIC18F4550 | A character-LCD terminal with scrollback, EEPROM settings and debounced buttons. |
@@ -90,14 +91,22 @@ python -m embedkit.cli toolchains
 python -m embedkit.cli build
 ```
 
-Current state on a machine with XC8, XC16, XC32, arm-none-eabi, arduino-cli and
-cargo installed: **12 build, 5 skip with a reason, 1 fails**. The failure and
-the skips are each explained in [docs/known-issues.md](docs/known-issues.md).
+Current state on a machine with XC8, XC16, arm-none-eabi, arduino-cli, a
+nightly Rust and the Pico SDK installed: **16 build, 3 skip with a reason, none
+fail**. The three skips are a host-side-only module, a MicroPython module with
+nothing to compile, and an XC32 installation whose `cc1` is missing and whose
+repair needs root. All of it is in
+[docs/known-issues.md](docs/known-issues.md).
+
+Assembling this found five defects in the bootloader alone — four of them in
+ECDSA verification that had never once executed, because the firmware had never
+linked.
 
 ## Tests
 
 ```bash
-pytest -m "not slow"     # seconds: CRC, framing, the manifest, toolchain discovery
+pytest -m "not slow"     # seconds: CRC, framing, the manifest, toolchain
+                         # discovery, and the bootloader's crypto vectors
 pytest                   # minutes: compiles all nineteen
 ```
 

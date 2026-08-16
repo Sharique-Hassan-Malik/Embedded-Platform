@@ -1,0 +1,18 @@
+# AVR is not a tier-1 Rust target, so there is no prebuilt `core` for it and no
+# stable channel that will compile one. Both halves of that have to be declared
+# somewhere, and declaring them here rather than in a README is what makes
+# `cargo build` work rather than `cargo build` plus three flags you have to know.
+#
+# The channel itself is pinned in rust-toolchain.toml.
+
+[build]
+target = "avr-atmega328p.json"
+
+[unstable]
+# `core` is built from source for this target. Needs the rust-src component,
+# which rust-toolchain.toml requests.
+build-std = ["core"]
+
+[target.'cfg(target_arch = "avr")']
+# avr-gcc does the linking; rustc only produces the objects.
+runner = "echo 'flash with: avrdude -p atmega328p -c arduino -P <port> -U flash:w:'"
