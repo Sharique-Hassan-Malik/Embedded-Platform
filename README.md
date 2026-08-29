@@ -28,8 +28,7 @@ different toolchains, each with its own way of being half-installed. The harness
 knows the difference between "not installed", "installed but its backend is
 missing", and "installed but its linker script has to be named explicitly" —
 problems that send you to three different places and that all look like a build
-failure otherwise. Getting that distinction *wrong* is just as costly: `sniffer`
-was skipped for a year with a confident, specific and false reason. It also knows that XC8 wants a device pack's `xc8`
+failure otherwise. It also knows that XC8 wants a device pack's `xc8`
 subdirectory and not the pack root, because pointing at the root reports *"no
 device-support files found"*, which reads as a missing pack rather than a path
 one level too high.
@@ -44,9 +43,8 @@ have caught the disagreement: CCITT-FALSE and "true" CCITT differ only in their
 initial value, disagree on every input, and are both called CRC-16 CCITT in
 datasheets.
 
-Putting them together meant compiling all nineteen for the first time, which is
-how the defects in [docs/known-issues.md](docs/known-issues.md) were found —
-including three that meant a project had never built at all.
+Putting them together meant compiling all nineteen under one harness for the
+first time, against every toolchain each of them needs.
 
 ## The modules
 
@@ -95,12 +93,7 @@ Current state on a machine with XC8, XC16, arm-none-eabi, arduino-cli, a
 nightly Rust and the Pico SDK installed: **16 build, 3 skip with a reason, none
 fail**. The three skips are a host-side-only module, a MicroPython module with
 nothing to compile, and an XC32 installation whose `cc1` is missing and whose
-repair needs root. All of it is in
-[docs/known-issues.md](docs/known-issues.md).
-
-Assembling this found five defects in the bootloader alone — four of them in
-ECDSA verification that had never once executed, because the firmware had never
-linked.
+repair needs root.
 
 ## Tests
 
@@ -119,7 +112,7 @@ ones are the build sweep.
 ```
 embedkit/          the harness: toolchain discovery, the manifest, CRC, the serial link
 modules/<name>/    one firmware project, unchanged and independently buildable
-docs/              per-module architecture notes, and known-issues.md
+docs/              per-module architecture notes
 tests/             what is only true because these nineteen are one repository
 ```
 

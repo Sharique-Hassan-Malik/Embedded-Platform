@@ -10,9 +10,9 @@
  *   SHA-256   FIPS 180-4 examples, plus the one-million-'a' value.
  *   ECDSA     RFC 6979 A.2.5 — P-256 with SHA-256, message "sample".
  *
- * Written so the RAM work in docs/known-issues.md can be attempted at all:
- * restructuring P-256's scratch space is not a change anyone should make
- * against a compiler error alone.
+ * Written so the RAM work can be attempted at all: restructuring P-256's
+ * scratch space is not a change anyone should make against a compiler error
+ * alone.
  */
 
 #include <stdio.h>

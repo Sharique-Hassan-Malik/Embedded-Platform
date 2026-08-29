@@ -94,10 +94,9 @@ if not result.ok and "E0554" in output:
                       "rejects with E0554")
 ```
 
-The inverse matters just as much: `bootloader` fails, and is reported as a
-failure, because it is a genuine RAM-placement defect. It is
-[written down](docs/known-issues.md) and carried as a strict `xfail` in the test
-suite rather than hidden.
+The inverse matters just as much: a module that the toolchain can build but
+that does not fit its part is reported as a **failure**, not a skip, because
+that is a property of the firmware rather than of the machine.
 
 ## The Arduino modules needed real fixes
 
