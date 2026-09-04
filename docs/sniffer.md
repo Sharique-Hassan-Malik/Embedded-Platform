@@ -122,7 +122,7 @@ assumption that one MISO bit was clocked per SPI1 byte interrupt holds.
 
 ### `sdlog.c` — Raw-sector SD logger
 
-Identical in concept to the weather station SD logger (project 51):
+Identical in concept to the `weather` project's SD logger:
 512-byte sectors, 32 records of 16 bytes each.  Each record stores the
 32-bit timestamp and 32-bit capture word.  No FAT filesystem.
 

@@ -98,10 +98,10 @@ The inverse matters just as much: a module that the toolchain can build but
 that does not fit its part is reported as a **failure**, not a skip, because
 that is a property of the firmware rather than of the machine.
 
-## The Arduino modules needed real fixes
+## The Arduino projects needed real fixes
 
 `arduino-cli compile` takes a directory whose name matches its `.ino`, and
-headers must sit beside the sketch. Three modules violated that and had
+headers must sit beside the sketch. Three projects violated that and had
 therefore never been built:
 
 - `fall-detect` kept its headers in `firmware/include/` and targeted an AVR
@@ -115,12 +115,12 @@ therefore never been built:
   directory — so both build, from one copy of the implementation.
 - `midi` was built for an Uno, which has no USB MIDI. It is a Leonardo.
 
-None of these are harness features. They are what compiling the projects
-revealed.
+None of these are harness features. They are what compiling the projects for
+real revealed.
 
 ## The shared serial link
 
-Nine modules stream to a host. `link.py` has two classes because there are two
+Nine projects stream to a host. `link.py` has two classes because there are two
 honest cases:
 
 - `TextLink` — the module prints lines. `readline()`, stripped.
@@ -148,8 +148,8 @@ check value is the only way to know which one you have.
 ## What the cross-module tests cover
 
 `tests/test_integration.py` deliberately does not re-test the firmware — each
-module tests itself, in its own folder. It tests what only exists because these
-nineteen are one repository:
+project tests itself, in its own folder. It tests the guarantees that hold across
+all nineteen:
 
 - every module in the manifest exists and has a README;
 - every Arduino module names a sketch directory that is really there;

@@ -4,11 +4,10 @@ Nineteen firmware projects across five architectures — PIC8, PIC16, PIC32, ARM
 Cortex-M, AVR, RP2040 and AVR-Rust — behind one build harness, one serial
 protocol and one CRC.
 
-Each module still lives in its own folder, with its own README, its own tests
-and its own build. `cd modules/rtos && make` works exactly as it did when that
-was a repository of its own. What this repository adds is the part that did not
-exist before: knowing how to build all nineteen, and a host-side link they all
-speak.
+Each project lives in its own folder, with its own README, its own tests and its
+own build, and builds standalone — `cd modules/rtos && make`. What the harness
+adds is what no single one can do: build all nineteen across five toolchains,
+and give them one host-side link they all speak.
 
 ```
 embed toolchains        which compilers are here, and what is wrong with them
@@ -17,14 +16,16 @@ embed build             build everything that can be built
 embed build --only rtos --family arm -v
 ```
 
-## Why it is one repository
+## What the projects actually share
 
 Nineteen firmware projects share almost no code — a PIC18 bootloader and a
 Cortex-M scheduler have nothing to say to each other. What they do share is
-everything *around* the firmware, and that is what was duplicated nineteen times:
+everything *around* the firmware, and that is what would otherwise be written
+nineteen times:
 
-**Building it.** Every project had its own idea of where the compiler was. Five
-different toolchains, each with its own way of being half-installed. The harness
+**Building it.** Left alone, every project has its own idea of where the compiler
+is. Five different toolchains, each with its own way of being half-installed.
+The harness
 knows the difference between "not installed", "installed but its backend is
 missing", and "installed but its linker script has to be named explicitly" —
 problems that send you to three different places and that all look like a build
@@ -46,9 +47,9 @@ datasheets.
 Putting them together meant compiling all nineteen under one harness for the
 first time, against every toolchain each of them needs.
 
-## The modules
+## The projects
 
-| module | target | what it is |
+| project | target | what it is |
 |---|---|---|
 | [`rtos`](modules/rtos) | STM32F401RE | A pre-emptive kernel: context switching in assembly, priority scheduling, mutexes with priority inheritance, a heap. |
 | [`rtos-viz`](modules/rtos-viz) | host | Traces the kernel's scheduling decisions off the wire and draws them — the only way to *see* a priority inversion. |
@@ -111,9 +112,9 @@ ones are the build sweep.
 
 ```
 embedkit/          the harness: toolchain discovery, the manifest, CRC, the serial link
-modules/<name>/    one firmware project, unchanged and independently buildable
+modules/<name>/    one firmware project, independently buildable
 docs/              per-module architecture notes
-tests/             what is only true because these nineteen are one repository
+tests/             the guarantees that hold across all nineteen
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for how the harness finds compilers and
